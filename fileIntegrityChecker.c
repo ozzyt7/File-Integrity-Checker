@@ -3,6 +3,9 @@
 #include <string.h>
 #include <time.h>
 
+int calcHash(char *, unsigned char *, unsigned int*);
+void getTime(char *, int);
+
 int main(int argc, char *argv[]){
 	if (argc < 2 || argc > 2){
 		fprintf(stderr, "Error. Usage <%s> <filename>\n", argv[0]);
@@ -30,86 +33,60 @@ int main(int argc, char *argv[]){
 	switch (input[0] - '0'){
 		case 1: {
 			//calculate file hash and determine time and store filename, hash and time in storedHash file
+			unsigned char digest[EVP_MAX_MD_SIZE];
+			unsigned int digestLen;
+			unsigned int *ptrDigestLen = &digestLen;
+			char dateAndTime[30];
 			FILE *fptr, *fptrStored;
-			unsigned char buffer[1024];
-			size_t bytesToRead;
-			EVP_MD_CTX *mdctx = EVP_MD_CTX_new(); //create digest context
-			fptr = fopen(argv[1], "rb");
-
-			if (!fptr){
-				printf("Error opening file.\n");
+			int isHashSuccess = calcHash(argv[1], digest, ptrDigestLen);
+			if (!isHashSuccess){
 				return 0;
 			}
-			fptrStored = fopen("storedHash.txt", "a");
 
+			fptrStored = fopen("storedHash.txt", "a");
 			if (!fptrStored) {
 				printf("Error opening storedHash file\n");
 				return 0;
 			}
-				
-			EVP_DigestInit_ex(mdctx, EVP_sha256(), NULL); //initialize SHA-256 hash function
-			while ((bytesToRead = fread(buffer, 1, sizeof(buffer), fptr)) > 0){   
-				EVP_DigestUpdate(mdctx, buffer, bytesToRead); //calculate file hash by 1024 bytes 
-			}
-			unsigned char digest[EVP_MAX_MD_SIZE];
-			unsigned int digestLen;
 
-			EVP_DigestFinal_ex(mdctx, digest, &digestLen); //put calculated hash into digest buffer
 			fprintf(fptrStored, "Filename: %s\nHash: ", argv[1]);
-
 			for (unsigned int i = 0; i < digestLen; i++){
 				fprintf(fptrStored, "%02x", digest[i]); //format hash data in hexadeciml and store in storedHash file
 			}
-			//get calender time and format it in Year-Month-Day Hour:Min:Sec
-			time_t currTime = time(NULL);
-        	struct tm  *ptrLocalTime = localtime(&currTime);
-			char dateAndTime[30];
-			strftime(dateAndTime, sizeof(dateAndTime), "%Y-%m-%d %H:%M:%S", ptrLocalTime);
+
+			getTime(dateAndTime, sizeof(dateAndTime));
 			fprintf(fptrStored, "\nLast Modified: %s", dateAndTime);
 
 			printf("Hash of %s added to storedHash file.\n\n", argv[1]);
-			EVP_MD_CTX_free(mdctx);
 			fprintf(fptrStored, "\n\n");  
 			fclose(fptrStored);
-			fclose(fptr);
 			break;
+
 		}
 		case 2: { 
 			//first calculate hash of file, then find stored hash in file and compare the two hashes
-			FILE *fptr, *fptrStored;   
-			unsigned char buffer[1024];
-			size_t bytesToRead;
-			EVP_MD_CTX *mdctx = EVP_MD_CTX_new(); 
-			fptr = fopen(argv[1], "rb");
-
-			if (!fptr){
-				printf("Error opening file.\n");
+			FILE *fptrStored;   
+			unsigned char digest[EVP_MAX_MD_SIZE];
+			unsigned int digestLen;
+			unsigned int *ptrDigestLen = &digestLen;
+			char hash[65], storedHash[1024], filename[1024];
+            int isFound = 0;
+			int isHashSuccess = calcHash(argv[1], digest, ptrDigestLen);
+			if (!isHashSuccess){
 				return 0;
 			}
+	
 			fptrStored = fopen("storedHash.txt", "r");
-
 			if (!fptrStored) {
 				printf("Error opening storedHash file\n");
 				return 0;
 			}
 
-			EVP_DigestInit_ex(mdctx, EVP_sha256(), NULL); 
-			while ((bytesToRead = fread(buffer, 1, sizeof(buffer), fptr)) > 0){
-				EVP_DigestUpdate(mdctx, buffer, bytesToRead);
-			}
-			unsigned char digest[EVP_MAX_MD_SIZE];
-			unsigned int digestLen;
-			char hash[65];
-
-			EVP_DigestFinal_ex(mdctx, digest, &digestLen); 
 			fprintf(fptrStored, "Filename: %s\nHash: ", argv[1]);
-
 			for (unsigned int i = 0; i < digestLen; i++){
 				sprintf(hash + (i *2), "%02x", digest[i]);
 			}
 			hash[64] = '\0';
-			char storedHash[1024], filename[1024];
-			int isFound = 0;
 			
 			//locate stored hash
 			while (fgets(filename, sizeof(filename), fptrStored) != NULL){
@@ -134,51 +111,33 @@ int main(int argc, char *argv[]){
 				else{
 					continue;
 				}
-
 			}
 			if (!isFound){
 				printf("File not found. Please ensure you added the hash of file to the storedHash file before checking integrity.\n\n");
 			}
-			EVP_MD_CTX_free(mdctx);
 			fprintf(fptrStored, "\n");
 			fclose(fptrStored);
-			fclose(fptr);
 			break;
-
 		}
 		case 3: {
 			//first calculate hash of file then locate position of stored hash and overwrite with new calculated hash
-			EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
-			FILE *fptr, *fptrStored;
-			size_t bytesToRead;
-
-			fptr = fopen(argv[1], "rb");
-			fptrStored = fopen("storedHash.txt", "r+");
-
-			if (!fptr){
-				printf("Error opening file\n");
+			FILE *fptrStored;   
+			unsigned char digest[EVP_MAX_MD_SIZE];
+			unsigned int digestLen;
+			unsigned int *ptrDigestLen = &digestLen;
+			char line[1024], dateAndTime[30];;
+			int isFound = 0;
+			int isHashSuccess = calcHash(argv[1], digest, ptrDigestLen);
+			if (!isHashSuccess){
+				return 0;
 			}
 
+			fptrStored = fopen("storedHash.txt", "r+");
 			if (!fptrStored){
 				printf("Error opening hash file\n");
 			}
-			unsigned char buffer[1024];
-
-			EVP_DigestInit_ex(mdctx, EVP_sha256(), NULL);
-			while ((bytesToRead = fread(buffer, 1, sizeof(buffer), fptr)) > 0){
-				EVP_DigestUpdate(mdctx, buffer, bytesToRead);
-			}
-			time_t currTime = time(NULL);
-        	struct tm  *ptrLocalTime = localtime(&currTime);
-			char dateAndTime[30];
-			strftime(dateAndTime, sizeof(dateAndTime), "%Y-%m-%d %H:%M:%S", ptrLocalTime);
+			getTime(dateAndTime, sizeof(dateAndTime));
 			fprintf(fptrStored, "\nLast Modified: %s", dateAndTime);
-
-			unsigned char digest[EVP_MAX_MD_SIZE];
-			unsigned int digestLen;
-			char line[1024];
-			EVP_DigestFinal_ex(mdctx, digest, &digestLen); 
-			int isFound = 0;
 			
 			while(fgets(line, sizeof(line), fptrStored) != NULL){
 				if (line[0] == 'F'){
@@ -212,15 +171,43 @@ int main(int argc, char *argv[]){
 				printf("File not found. Please ensure you add the hash of file to stored hash file before updating file hash.\n\n");
             }
 
-			EVP_MD_CTX_free(mdctx);
 			fclose(fptrStored);
-			fclose(fptr);
 			break;
+
 		}
 		default:
 			printf("\nInvalid Input. Please don't include spaces and choose either only 1, 2 or 3.\n\n");
 			break;
 	}
-
 	return 1;
+}
+
+int calcHash(char *filename, unsigned char *digest, unsigned int *digestLen){
+	FILE *fptr;
+	unsigned char buffer[1024];
+	size_t bytesToRead;
+	EVP_MD_CTX *mdctx = EVP_MD_CTX_new(); //create digest context
+	
+	fptr = fopen(filename, "rb");
+	if (!fptr){
+		printf("Error opening file.\n");
+		return 0;
+	}                        
+	
+	EVP_DigestInit_ex(mdctx, EVP_sha256(), NULL); //initialize SHA-256 hash function
+	while ((bytesToRead = fread(buffer, 1, sizeof(buffer), fptr)) > 0){
+		EVP_DigestUpdate(mdctx, buffer, bytesToRead); //calculate file hash by 1024 bytes
+	}
+				
+	EVP_DigestFinal_ex(mdctx, digest, digestLen); //put calculated hash into digest buffer
+	fclose(fptr);
+	EVP_MD_CTX_free(mdctx);
+	return 1;
+}
+
+void getTime(char *dateAndTime, int size){
+//get calender time and format it in Year-Month-Day Hour:Min:Sec
+	time_t currTime = time(NULL);
+	struct tm  *ptrLocalTime = localtime(&currTime);
+	strftime(dateAndTime, size, "%Y-%m-%d %H:%M:%S", ptrLocalTime);
 }
